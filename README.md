@@ -196,13 +196,53 @@ Access n8n: `http://YOUR_IP:5678`
 └── .env.example
 ```
 
+
+## Hermes Orchestrator
+
+Advanced multi-agent coordinator using Hermes3 model. Routes tasks, coordinates workflows, and handles Nepali translation.
+
+```bash
+# Chat with Hermes (auto-routes to specialists)
+POST /hermes
+{"message": "Create an Instagram post about Kathmandu food and translate to Nepali", "agent_type": "hermes"}
+```
+
+## Translation & Nepali Content
+
+### Translate Text
+```bash
+# English → Nepali
+POST /translate/to-nepali
+{"text": "Welcome to our restaurant!"}
+
+# Nepali → English
+POST /translate/to-english
+{"text": "हाम्रो रेस्टुरेन्टमा स्वागत छ!"}
+
+# Any language pair
+POST /translate
+{"text": "Hello world", "source_lang": "en", "target_lang": "ne"}
+```
+
+### Generate Nepali Content
+```bash
+POST /content/nepali
+{"topic": "Dashain festival food", "content_type": "post", "platform": "facebook"}
+
+# Returns both English and Nepali versions
+```
+
+### Models Used
+- **hermes3:latest** — Advanced reasoning + function calling for orchestration
+- **translategemma:latest** — Specialized translation model for Nepali
+
 ## Roadmap
 
 - [x] Phase 1: Git repo + project structure
 - [x] Phase 2: Dynamic model management
 - [x] Phase 3: n8n automation engine
 - [x] Phase 4: Settings panel (SMTP, Telegram, Slack, Discord)
-- [ ] Phase 5: Hermes agent + TranslateGemma (Nepali)
+- [x] Phase 5: Hermes agent + TranslateGemma (Nepali)
 - [ ] Phase 6: Media pipeline (Stable Diffusion, TTS, Whisper)
 - [ ] Phase 7: Social platform integration (Facebook, Instagram, TikTok)
 - [ ] Phase 8: Maicha UI v2 (all features integrated)

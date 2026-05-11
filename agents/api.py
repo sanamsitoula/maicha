@@ -124,6 +124,7 @@ def list_agents():
         {"name": "social-media", "description": "Content creation, hashtags, scheduling"},
         {"name": "marketing", "description": "Ad copy, emails, blog posts, campaigns"},
         {"name": "video", "description": "Video scripts, media production"},
+        {"name": "hermes", "description": "Advanced orchestrator — multi-agent routing + Nepali translation"},
     ]}
 
 
@@ -520,3 +521,75 @@ def test_whatsapp_connection():
 def api_send_whatsapp(req: SendWhatsAppRequest):
     """Send a WhatsApp message."""
     return send_whatsapp(req.to_phone, req.message)
+
+
+# ── Translation Routes ──
+
+from agents.shared.translator import translate_to_nepali, translate_to_english, translate, generate_nepali_content
+
+
+class TranslateRequest(BaseModel):
+    text: str
+    source_lang: str = "en"
+    target_lang: str = "ne"
+    model: Optional[str] = None
+
+class NepaliContentRequest(BaseModel):
+    topic: str
+    content_type: str = "post"
+    platform: str = "facebook"
+    model: Optional[str] = None
+
+
+@app.post("/translate")
+def api_translate(req: TranslateRequest):
+    """Translate text between languages. Default: English → Nepali."""
+    return translate(req.text, req.source_lang, req.target_lang, req.model)
+
+@app.post("/translate/to-nepali")
+def api_to_nepali(req: TranslateRequest):
+    """Translate English text to Nepali."""
+    return translate_to_nepali(req.text, req.model)
+
+@app.post("/translate/to-english")
+def api_to_english(req: TranslateRequest):
+    """Translate Nepali text to English."""
+    return translate_to_english(req.text, req.model)
+
+@app.post("/content/nepali")
+def api_nepali_content(req: NepaliContentRequest):
+    """Generate social media content in both English and Nepali."""
+    return generate_nepali_content(req.topic, req.content_type, req.platform, req.model)
+
+
+# ── Hermes Orchestrator Route ──
+
+from agents.orchestrator.hermes_agent import create_hermes_agent
+
+_hermes_instance = None
+
+@app.post("/hermes")
+def hermes_chat(req: ChatRequest):
+    """Chat with the Hermes orchestrator — advanced multi-agent routing + Nepali translation."""
+    global _hermes_instance
+    start = time.time()
+
+    if _hermes_instance is None:
+        _hermes_instance = create_hermes_agent()
+
+    if req.session_id == "new" or req.session_id is None:
+        _hermes_instance.reset_conversation()
+        session_id = secrets.token_hex(8)
+    else:
+        session_id = req.session_id
+
+    response = _hermes_instance.process_message(req.message)
+    elapsed = round(time.time() - start, 2)
+
+    return ChatResponse(
+        response=response,
+        agent_type="hermes",
+        model_used=_hermes_instance.model or "hermes3:latest",
+        session_id=session_id,
+        elapsed_seconds=elapsed,
+    )
