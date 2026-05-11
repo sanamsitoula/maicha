@@ -1,0 +1,31 @@
+{
+  "name": "Social Media Content Generator Bot",
+  "description": "Daily automated content generation + scheduling for all platforms",
+  "nodes_description": [
+    "1. Cron trigger: 8:00 AM daily",
+    "2. HTTP Request: calls /chat with social-media agent for Instagram post",
+    "3. HTTP Request: calls /chat with social-media agent for TikTok caption",
+    "4. HTTP Request: calls /chat with social-media agent for Facebook post",
+    "5. Stores all generated content in content_queue table",
+    "6. Optional: posts directly via platform APIs (Phase 7)"
+  ],
+  "setup_instructions": [
+    "1. Open n8n at http://YOUR_IP:5678",
+    "2. Create new workflow",
+    "3. Add Cron node (8:00 AM daily)",
+    "4. Add HTTP Request → POST http://ai-fastapi:8000/chat",
+    "   Body: {\"message\": \"Create an Instagram post about today's food trends. Include caption and 10 hashtags.\", \"agent_type\": \"social-media\"}",
+    "5. Add another HTTP Request for TikTok:",
+    "   Body: {\"message\": \"Write a TikTok caption about food delivery with trending hashtags\", \"agent_type\": \"social-media\"}",
+    "6. Add another HTTP Request for Facebook:",
+    "   Body: {\"message\": \"Write a Facebook post promoting our restaurant specials\", \"agent_type\": \"social-media\"}",
+    "7. Add Postgres node to store each in content_queue table",
+    "8. Activate workflow"
+  ],
+  "webhook_endpoint": null,
+  "api_calls": [
+    {"method": "POST", "url": "http://ai-fastapi:8000/chat", "body": {"message": "Create an Instagram post about today's food trends", "agent_type": "social-media"}},
+    {"method": "POST", "url": "http://ai-fastapi:8000/chat", "body": {"message": "Write a TikTok caption about food delivery", "agent_type": "social-media"}},
+    {"method": "POST", "url": "http://ai-fastapi:8000/chat", "body": {"message": "Write a Facebook post promoting restaurant specials", "agent_type": "social-media"}}
+  ]
+}

@@ -1,3 +1,4 @@
+import httpx
 """
 FastAPI Backend — REST API for all AI agents + model management
 """
@@ -279,3 +280,65 @@ def get_stats():
         result = query(f"SELECT count(*) as count FROM {table}")
         stats[table] = result[0]["count"]
     return {"stats": stats}
+
+
+# ── n8n Integration Routes ──
+
+@app.get("/n8n/workflows")
+def list_n8n_workflows():
+    """List available n8n workflow templates."""
+    import glob
+    workflows = []
+    for f in sorted(glob.glob("/app/agents/../n8n/workflows/*.json")):
+        try:
+            with open(f) as fh:
+                data = json.load(fh)
+                workflows.append({
+                    "file": f.split("/")[-1],
+                    "name": data.get("name", "Unknown"),
+                    "description": data.get("description", ""),
+                })
+        except Exception:
+            pass
+
+    # Also try the mounted path
+    for f in sorted(glob.glob("/opt/ai-server/n8n/workflows/*.json")):
+        try:
+            with open(f) as fh:
+                data = json.load(fh)
+                name = data.get("name", "Unknown")
+                if not any(w["name"] == name for w in workflows):
+                    workflows.append({
+                        "file": f.split("/")[-1],
+                        "name": name,
+                        "description": data.get("description", ""),
+                    })
+        except Exception:
+            pass
+
+    return {
+        "workflows": workflows,
+        "n8n_url": "http://20.41.122.188:5678",
+        "n8n_status": _check_n8n_status(),
+    }
+
+
+def _check_n8n_status():
+    """Check if n8n is reachable."""
+    try:
+        resp = httpx.get("http://n8n:5678/healthz", timeout=3.0)
+        return "running" if resp.status_code == 200 else "error"
+    except Exception:
+        return "unreachable"
+
+
+@app.get("/n8n/workflow/{filename}")
+def get_n8n_workflow(filename: str):
+    """Get a specific workflow template."""
+    import os.path
+    for base_path in ["/opt/ai-server/n8n/workflows", "/app/agents/../n8n/workflows"]:
+        filepath = os.path.join(base_path, filename)
+        if os.path.exists(filepath):
+            with open(filepath) as f:
+                return json.load(f)
+    raise HTTPException(status_code=404, detail=f"Workflow not found: {filename}")

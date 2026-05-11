@@ -1,0 +1,27 @@
+{
+  "name": "Restaurant Order Notification Bot",
+  "description": "Monitors new orders and sends notifications to kitchen + customer",
+  "nodes_description": [
+    "1. Schedule trigger: polls every 60 seconds",
+    "2. HTTP Request: GET /orders?status=confirmed",
+    "3. IF node: checks if new orders exist",
+    "4. For each order: sends Telegram/Slack notification to kitchen",
+    "5. Updates order status to 'preparing' via PostgreSQL",
+    "6. Sends confirmation message to customer (if email provided)"
+  ],
+  "setup_instructions": [
+    "1. Open n8n at http://YOUR_IP:5678",
+    "2. Create new workflow",
+    "3. Add Schedule Trigger node (every 1 minute)",
+    "4. Add HTTP Request node → GET http://ai-fastapi:8000/orders?status=confirmed",
+    "5. Add IF node → {{$json.count}} > 0",
+    "6. True path: Add SplitInBatches for each order",
+    "7. Add Telegram/Slack node (configure in Settings phase)",
+    "8. Add Postgres node → UPDATE orders SET status='preparing' WHERE id={{$json.id}}",
+    "9. Activate workflow"
+  ],
+  "webhook_endpoint": null,
+  "api_calls": [
+    {"method": "GET", "url": "http://ai-fastapi:8000/orders?status=confirmed"}
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "name": "Daily Marketing Email Generator",
+  "description": "Generates and stores marketing email campaigns using the marketing agent",
+  "nodes_description": [
+    "1. Cron trigger: 9:00 AM weekdays",
+    "2. HTTP Request: calls /chat with marketing agent",
+    "3. Parses response for subject line + body",
+    "4. Stores in agent_memory table",
+    "5. Optional: sends via SMTP (Phase 4)"
+  ],
+  "setup_instructions": [
+    "1. Open n8n at http://YOUR_IP:5678",
+    "2. Create new workflow",
+    "3. Add Cron node (9:00 AM, Mon-Fri)",
+    "4. Add HTTP Request → POST http://ai-fastapi:8000/chat",
+    "   Body: {\"message\": \"Write a marketing email for our weekly restaurant newsletter. Include subject line, preview text, and body.\", \"agent_type\": \"marketing\"}",
+    "5. Add Postgres node → INSERT into agent_memory",
+    "6. Activate workflow"
+  ],
+  "webhook_endpoint": null,
+  "api_calls": [
+    {"method": "POST", "url": "http://ai-fastapi:8000/chat", "body": {"message": "Write a marketing email for our weekly newsletter", "agent_type": "marketing"}}
+  ]
+}

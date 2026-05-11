@@ -1,0 +1,27 @@
+{
+  "name": "Real Estate Lead Bot",
+  "description": "When a new property inquiry comes in, AI qualifies the lead and sends a follow-up email",
+  "nodes_description": [
+    "1. Webhook trigger: receives new inquiry from Maicha API",
+    "2. HTTP Request: calls /chat with real-estate agent to qualify lead",
+    "3. IF node: checks lead_score > 50",
+    "4. High score path: sends personalized follow-up email via SMTP",
+    "5. Low score path: logs to database for manual review",
+    "6. Always: updates inquiry status in PostgreSQL"
+  ],
+  "setup_instructions": [
+    "1. Open n8n at http://YOUR_IP:5678",
+    "2. Create new workflow",
+    "3. Add Webhook node (POST /webhook/real-estate-lead)",
+    "4. Add HTTP Request node → POST http://ai-fastapi:8000/chat",
+    "   Body: {\"message\": \"Qualify this lead: {{$json.contact_name}} interested in {{$json.property_title}}\", \"agent_type\": \"real-estate\"}",
+    "5. Add IF node → check if response contains 'high priority' or 'qualified'",
+    "6. True path: Add Send Email node (configure SMTP in Settings phase)",
+    "7. False path: Add Postgres node → INSERT into events table",
+    "8. Activate workflow"
+  ],
+  "webhook_endpoint": "/webhook/real-estate-lead",
+  "api_calls": [
+    {"method": "POST", "url": "http://ai-fastapi:8000/chat", "body": {"message": "Qualify this lead: {contact_name} asking about {property_title}. Their message: {message}", "agent_type": "real-estate"}}
+  ]
+}
