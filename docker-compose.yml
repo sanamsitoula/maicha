@@ -131,6 +131,9 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - DEFAULT_MODEL=qwen3:8b
       - API_KEY=change-me-to-a-real-key
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRY_HOURS=${JWT_EXPIRY_HOURS}
+      - ADMIN_SETUP_KEY=${ADMIN_SETUP_KEY}
     volumes:
       - ./n8n/workflows:/opt/ai-server/n8n/workflows:ro
     depends_on:

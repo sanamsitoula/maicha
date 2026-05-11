@@ -1,3 +1,238 @@
+#!/bin/bash
+set -e
+echo "=== Sub-phase A: Auth + Role System ==="
+
+BASE="/opt/ai-server"
+AGENTS="$BASE/agents"
+cd "$BASE"
+
+# ============================================
+# Step 1: Add auth dependencies
+# ============================================
+cat > "$AGENTS/requirements.txt" << 'EOF'
+fastapi==0.115.0
+uvicorn==0.30.6
+psycopg2-binary==2.9.9
+httpx==0.27.2
+python-dotenv==1.0.1
+pydantic==2.9.2
+PyJWT==2.9.0
+bcrypt==4.2.0
+python-multipart==0.0.12
+EOF
+
+echo "Updated requirements.txt with auth packages"
+
+# ============================================
+# Step 2: Create auth_manager.py
+# ============================================
+cat > "$AGENTS/shared/auth_manager.py" << 'EOF'
+"""
+Auth Manager — JWT-based authentication with guest/user/admin roles.
+Uses the existing users table from Phase 4 schema.
+"""
+import os
+import jwt
+import bcrypt
+import secrets
+from datetime import datetime, timedelta
+from agents.shared.database import query, execute
+
+JWT_SECRET = os.getenv("JWT_SECRET", "maicha-secret-change-me-in-production")
+JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "72"))
+ADMIN_SETUP_KEY = os.getenv("ADMIN_SETUP_KEY", "maicha-admin-setup")
+
+
+def hash_password(password):
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password, password_hash):
+    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+
+
+def create_token(user_id, email, role, full_name=None):
+    payload = {
+        "user_id": str(user_id),
+        "email": email,
+        "role": role,
+        "name": full_name or email.split("@")[0],
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS),
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def decode_token(token):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+
+def register_user(email, password, full_name=None, role="user"):
+    existing = query("SELECT id FROM users WHERE email = %s", (email,))
+    if existing:
+        return {"status": "error", "message": "Email already registered"}
+
+    pw_hash = hash_password(password)
+    result = execute(
+        "INSERT INTO users (email, password_hash, full_name, role, is_active) "
+        "VALUES (%s, %s, %s, %s, true) RETURNING id, email, role, full_name",
+        (email, pw_hash, full_name or email.split("@")[0], role)
+    )
+    user = result[0]
+    token = create_token(user["id"], user["email"], user["role"], user["full_name"])
+    return {
+        "status": "ok",
+        "user": {"id": str(user["id"]), "email": user["email"], "role": user["role"], "name": user["full_name"]},
+        "token": token,
+    }
+
+
+def login_user(email, password):
+    users = query(
+        "SELECT id, email, password_hash, full_name, role, is_active FROM users WHERE email = %s",
+        (email,)
+    )
+    if not users:
+        return {"status": "error", "message": "Invalid email or password"}
+
+    user = users[0]
+    if not user["is_active"]:
+        return {"status": "error", "message": "Account is deactivated"}
+
+    if not verify_password(password, user["password_hash"]):
+        return {"status": "error", "message": "Invalid email or password"}
+
+    execute(
+        "UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+        (user["id"],)
+    )
+
+    token = create_token(user["id"], user["email"], user["role"], user["full_name"])
+    return {
+        "status": "ok",
+        "user": {"id": str(user["id"]), "email": user["email"], "role": user["role"], "name": user["full_name"]},
+        "token": token,
+    }
+
+
+def create_admin(email, password, full_name=None, setup_key=None):
+    if setup_key != ADMIN_SETUP_KEY:
+        return {"status": "error", "message": "Invalid setup key"}
+    return register_user(email, password, full_name, role="admin")
+
+
+def get_user_from_token(token):
+    if not token:
+        return None
+    payload = decode_token(token)
+    if not payload:
+        return None
+    users = query(
+        "SELECT id, email, full_name, role, is_active FROM users WHERE id = %s::uuid AND is_active = true",
+        (payload["user_id"],)
+    )
+    if not users:
+        return None
+    return users[0]
+
+
+def list_users():
+    return query(
+        "SELECT id, email, full_name, role, is_active, created_at, updated_at "
+        "FROM users ORDER BY created_at DESC"
+    )
+
+
+def update_user_role(user_id, new_role):
+    if new_role not in ("guest", "user", "admin"):
+        return {"status": "error", "message": "Invalid role"}
+    execute("UPDATE users SET role = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s::uuid", (new_role, user_id))
+    return {"status": "ok", "user_id": user_id, "role": new_role}
+
+
+def deactivate_user(user_id):
+    execute("UPDATE users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = %s::uuid", (user_id,))
+    return {"status": "ok", "user_id": user_id, "deactivated": True}
+
+
+def create_guest_token():
+    guest_id = f"guest-{secrets.token_hex(8)}"
+    payload = {
+        "user_id": guest_id,
+        "email": f"{guest_id}@guest",
+        "role": "guest",
+        "name": "Guest",
+        "exp": datetime.utcnow() + timedelta(hours=24),
+        "iat": datetime.utcnow(),
+    }
+    return {
+        "status": "ok",
+        "user": {"id": guest_id, "email": payload["email"], "role": "guest", "name": "Guest"},
+        "token": jwt.encode(payload, JWT_SECRET, algorithm="HS256"),
+    }
+EOF
+
+echo "Created auth_manager.py"
+
+# ============================================
+# Step 3: Create auth middleware for FastAPI
+# ============================================
+cat > "$AGENTS/shared/auth_middleware.py" << 'EOF'
+"""
+Auth middleware — FastAPI dependencies for role-based access.
+"""
+from fastapi import Header, HTTPException, Depends
+from typing import Optional
+from agents.shared.auth_manager import decode_token
+
+
+def get_current_user(authorization: Optional[str] = Header(None)):
+    """Extract user from JWT token. Returns None for guests."""
+    if not authorization:
+        return {"role": "guest", "user_id": None, "email": None, "name": "Guest"}
+
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    payload = decode_token(token)
+    if not payload:
+        return {"role": "guest", "user_id": None, "email": None, "name": "Guest"}
+
+    return {
+        "role": payload.get("role", "guest"),
+        "user_id": payload.get("user_id"),
+        "email": payload.get("email"),
+        "name": payload.get("name", "User"),
+    }
+
+
+def require_user(current_user: dict = Depends(get_current_user)):
+    """Require at least 'user' role."""
+    if current_user["role"] == "guest":
+        raise HTTPException(status_code=401, detail="Login required")
+    return current_user
+
+
+def require_admin(current_user: dict = Depends(get_current_user)):
+    """Require 'admin' role."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+EOF
+
+echo "Created auth_middleware.py"
+
+# ============================================
+# Step 4: Rewrite api.py with auth integrated
+# ============================================
+# Back up current api.py
+cp "$AGENTS/api.py" "$AGENTS/api.py.bak"
+
+cat > "$AGENTS/api.py" << 'APEOF'
 """
 Maicha AI Platform — FastAPI Backend v2
 Auth + Models + Settings + Notifications + Translation + Agents
@@ -630,3 +865,98 @@ async def telegram_webhook(request: Request):
 
     send_telegram(reply, chat_id)
     return {"ok": True}
+APEOF
+
+echo "Rewrote api.py with full auth system"
+
+# ============================================
+# Step 5: Add JWT_SECRET and ADMIN_SETUP_KEY to .env
+# ============================================
+if ! grep -q "JWT_SECRET" "$BASE/.env"; then
+    JWT=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    ADMIN_KEY=$(python3 -c "import secrets; print(secrets.token_hex(16))")
+    cat >> "$BASE/.env" << ENVEOF
+
+# Auth
+JWT_SECRET=$JWT
+JWT_EXPIRY_HOURS=72
+ADMIN_SETUP_KEY=$ADMIN_KEY
+ENVEOF
+    echo "Added JWT_SECRET and ADMIN_SETUP_KEY to .env"
+    echo ""
+    echo "IMPORTANT — Save your admin setup key: $ADMIN_KEY"
+    echo "You'll need this to create the first admin account."
+fi
+
+# Update .env.example
+if ! grep -q "JWT_SECRET" "$BASE/.env.example"; then
+    cat >> "$BASE/.env.example" << 'ENVEOF'
+
+# Auth
+JWT_SECRET=CHANGE_ME_RANDOM_64_CHAR_STRING
+JWT_EXPIRY_HOURS=72
+ADMIN_SETUP_KEY=CHANGE_ME_USED_TO_CREATE_FIRST_ADMIN
+ENVEOF
+fi
+
+# ============================================
+# Step 6: Add auth env vars to docker-compose fastapi
+# ============================================
+if ! grep -q "JWT_SECRET" docker-compose.yml; then
+    sed -i '/API_KEY=change-me/a\      - JWT_SECRET=${JWT_SECRET}\n      - JWT_EXPIRY_HOURS=${JWT_EXPIRY_HOURS}\n      - ADMIN_SETUP_KEY=${ADMIN_SETUP_KEY}' docker-compose.yml
+    echo "Added JWT vars to docker-compose.yml"
+fi
+
+# ============================================
+# Step 7: Add new proxy routes to nginx
+# ============================================
+if ! grep -q "location /auth" "$BASE/nginx/nginx.conf"; then
+    sed -i '/location \/openapi.json/a\
+        location /auth { proxy_pass http://fastapi:8000; proxy_set_header Host $host; proxy_set_header Content-Type $http_content_type; }\
+        location /admin { proxy_pass http://fastapi:8000; proxy_set_header Host $host; proxy_set_header Authorization $http_authorization; }\
+        location /webhook { proxy_pass http://fastapi:8000; proxy_set_header Host $host; proxy_set_header Content-Type $http_content_type; }' "$BASE/nginx/nginx.conf"
+    echo "Added /auth, /admin, /webhook to nginx"
+fi
+
+# Also ensure Authorization header is passed for all proxy routes
+sed -i 's|proxy_set_header Host $host;|proxy_set_header Host $host; proxy_set_header Authorization $http_authorization;|g' "$BASE/nginx/nginx.conf"
+
+# ============================================
+# Step 8: Git commit
+# ============================================
+git add -A
+git commit -m "Sub-phase A: Auth + role system (guest/user/admin)
+
+Features:
+- auth_manager.py: JWT auth, bcrypt passwords, guest tokens
+- auth_middleware.py: role-based access (get_current_user, require_user, require_admin)
+- api.py fully rewritten with auth integrated:
+  * POST /auth/register, /auth/login, /auth/guest, /auth/admin-setup
+  * GET /auth/me — current user from token
+  * Admin-only: model pull/delete, settings config, user management
+  * Guest-allowed: chat, explore data, view models
+  * /webhook/telegram — receives Telegram messages, routes to agents, notifies Discord
+- Stats now include n8n workflow + execution counts from n8n database
+- Settings endpoint returns field definitions for UI form generation
+- All notification channels in single clean API
+- JWT_SECRET + ADMIN_SETUP_KEY in .env
+- Nginx updated with /auth, /admin, /webhook routes"
+
+echo ""
+echo "=== Sub-phase A Complete ==="
+echo ""
+echo "Run:"
+echo "  cd /opt/ai-server"
+echo "  docker compose build fastapi agent-runner"
+echo "  docker compose up -d --force-recreate fastapi nginx"
+echo "  git push"
+echo ""
+ADMIN_KEY=$(grep ADMIN_SETUP_KEY "$BASE/.env" | cut -d= -f2)
+echo "Then create your admin account:"
+echo "  curl -X POST http://localhost:8000/auth/admin-setup -H 'Content-Type: application/json' -d '{\"email\":\"sanam.ctaula@gmail.com\",\"password\":\"YOUR_PASSWORD\",\"full_name\":\"Sanam Sitoula\",\"setup_key\":\"$ADMIN_KEY\"}'"
+echo ""
+echo "Test guest access:"
+echo "  curl -X POST http://localhost:8000/auth/guest"
+echo ""
+echo "Test login:"
+echo "  curl -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"sanam.ctaula@gmail.com\",\"password\":\"YOUR_PASSWORD\"}'"
