@@ -198,3 +198,41 @@ def test_discord():
         return {"status": "error", "message": f"HTTP {resp.status_code}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def save_whatsapp_config(phone_number_id, access_token, verify_token=None):
+    """Save WhatsApp Business API configuration.
+    
+    Uses Meta's WhatsApp Business Cloud API.
+    - phone_number_id: Your WhatsApp Business phone number ID
+    - access_token: Permanent token from Meta Developer portal
+    - verify_token: For webhook verification (optional)
+    """
+    set_setting("whatsapp", "phone_number_id", phone_number_id)
+    set_setting("whatsapp", "access_token", access_token, is_secret=True)
+    if verify_token:
+        set_setting("whatsapp", "verify_token", verify_token, is_secret=True)
+    return {"status": "saved", "category": "whatsapp"}
+
+
+def test_whatsapp():
+    """Test WhatsApp Business API connection."""
+    import httpx
+    try:
+        phone_id = get_setting("whatsapp", "phone_number_id")
+        token = query(
+            "SELECT value FROM platform_settings WHERE category = 'whatsapp' AND key = 'access_token'",
+        )[0]["value"]
+        if not phone_id or not token:
+            return {"status": "error", "message": "WhatsApp not configured"}
+        resp = httpx.get(
+            f"https://graph.facebook.com/v18.0/{phone_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10.0,
+        )
+        data = resp.json()
+        if "id" in data:
+            return {"status": "ok", "phone_number_id": data["id"], "display_phone": data.get("display_phone_number", "unknown")}
+        return {"status": "error", "message": data.get("error", {}).get("message", "Unknown error")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

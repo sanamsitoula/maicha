@@ -80,6 +80,20 @@ POST /settings/discord/test  # Test (sends a message)
 POST /notify/discord         # Send message
 ```
 
+
+### WhatsApp (Business API)
+```bash
+# Requires Meta Business account + WhatsApp Business API setup
+# Get credentials from https://developers.facebook.com/
+
+POST /settings/whatsapp
+{"phone_number_id": "1234567890", "access_token": "EAAx...", "verify_token": "my-verify-token"}
+
+POST /settings/whatsapp/test   # Test API connection
+POST /notify/whatsapp           # Send message
+{"to_phone": "9779812345678", "message": "Hello from Maicha!"}
+```
+
 ### Send to All Channels
 ```bash
 POST /notify/all
@@ -123,6 +137,7 @@ Access n8n: `http://YOUR_IP:5678`
 | POST | `/settings/telegram` | Configure Telegram |
 | POST | `/settings/slack` | Configure Slack |
 | POST | `/settings/discord` | Configure Discord |
+| POST | `/settings/whatsapp` | Configure WhatsApp |
 | POST | `/settings/{channel}/test` | Test connection |
 
 ### Notifications
@@ -132,6 +147,7 @@ Access n8n: `http://YOUR_IP:5678`
 | POST | `/notify/telegram` | Send Telegram |
 | POST | `/notify/slack` | Send Slack |
 | POST | `/notify/discord` | Send Discord |
+| POST | `/notify/whatsapp` | Send WhatsApp |
 | POST | `/notify/all` | Send to all channels |
 
 ### Data

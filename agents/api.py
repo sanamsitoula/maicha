@@ -391,6 +391,7 @@ def get_settings():
             "telegram": {"label": "Telegram", "description": "Send notifications via Telegram bot"},
             "slack": {"label": "Slack", "description": "Send notifications via Slack webhook"},
             "discord": {"label": "Discord", "description": "Send notifications via Discord webhook"},
+            "whatsapp": {"label": "WhatsApp", "description": "Send messages via WhatsApp Business API"},
             "general": {"label": "General", "description": "Platform-wide settings"},
         }
     }
@@ -487,3 +488,35 @@ def api_send_discord(req: SendNotificationRequest):
 def api_send_all(req: SendNotificationRequest):
     """Send notification to all configured channels."""
     return send_notification(req.message, req.channels)
+
+
+# ── WhatsApp Routes ──
+
+from agents.shared.settings_manager import save_whatsapp_config, test_whatsapp
+from agents.shared.notification_sender import send_whatsapp
+
+
+class WhatsAppConfigRequest(BaseModel):
+    phone_number_id: str
+    access_token: str
+    verify_token: Optional[str] = None
+
+class SendWhatsAppRequest(BaseModel):
+    to_phone: str
+    message: str
+
+
+@app.post("/settings/whatsapp")
+def configure_whatsapp(req: WhatsAppConfigRequest):
+    """Configure WhatsApp Business API."""
+    return save_whatsapp_config(req.phone_number_id, req.access_token, req.verify_token)
+
+@app.post("/settings/whatsapp/test")
+def test_whatsapp_connection():
+    """Test WhatsApp Business API connection."""
+    return test_whatsapp()
+
+@app.post("/notify/whatsapp")
+def api_send_whatsapp(req: SendWhatsAppRequest):
+    """Send a WhatsApp message."""
+    return send_whatsapp(req.to_phone, req.message)

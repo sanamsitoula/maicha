@@ -117,5 +117,43 @@ def send_notification(message, channels=None):
         results["slack"] = send_slack(message)
     if "discord" in all_channels:
         results["discord"] = send_discord(message)
+    if "whatsapp" in all_channels:
+        results["whatsapp"] = {"status": "skipped", "message": "WhatsApp requires a recipient phone number. Use /notify/whatsapp directly."}
 
     return results
+
+
+def send_whatsapp(to_phone, message):
+    """Send a WhatsApp message via Meta Business API.
+    
+    Args:
+        to_phone: recipient phone number with country code (e.g. '9779812345678')
+        message: text message to send
+    """
+    phone_id = _get_raw_setting("whatsapp", "phone_number_id")
+    token = _get_raw_setting("whatsapp", "access_token")
+
+    if not phone_id or not token:
+        return {"status": "error", "message": "WhatsApp not configured"}
+
+    try:
+        resp = httpx.post(
+            f"https://graph.facebook.com/v18.0/{phone_id}/messages",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "messaging_product": "whatsapp",
+                "to": to_phone,
+                "type": "text",
+                "text": {"body": message},
+            },
+            timeout=15.0,
+        )
+        data = resp.json()
+        if "messages" in data:
+            return {"status": "sent", "to": to_phone, "message_id": data["messages"][0]["id"]}
+        return {"status": "error", "message": data.get("error", {}).get("message", "Unknown error")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
