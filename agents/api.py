@@ -342,3 +342,148 @@ def get_n8n_workflow(filename: str):
             with open(filepath) as f:
                 return json.load(f)
     raise HTTPException(status_code=404, detail=f"Workflow not found: {filename}")
+
+
+# ── Settings Routes ──
+
+from agents.shared.settings_manager import (
+    get_all_settings, get_category_settings, set_setting,
+    save_smtp_config, save_telegram_config, save_slack_config, save_discord_config,
+    test_smtp, test_telegram, test_slack, test_discord,
+    ensure_settings_table,
+)
+
+
+class SmtpConfigRequest(BaseModel):
+    host: str
+    port: int = 587
+    username: str
+    password: str
+    from_email: str
+    use_tls: bool = True
+
+class TelegramConfigRequest(BaseModel):
+    bot_token: str
+    default_chat_id: Optional[str] = None
+
+class SlackConfigRequest(BaseModel):
+    webhook_url: str
+    default_channel: Optional[str] = None
+
+class DiscordConfigRequest(BaseModel):
+    webhook_url: str
+
+class SettingRequest(BaseModel):
+    category: str
+    key: str
+    value: str
+    is_secret: bool = False
+
+
+@app.get("/settings")
+def get_settings():
+    """Get all platform settings (secrets masked)."""
+    ensure_settings_table()
+    return {
+        "settings": get_all_settings(mask_secrets=True),
+        "categories": {
+            "smtp": {"label": "Email (SMTP)", "description": "Send emails via SMTP server"},
+            "telegram": {"label": "Telegram", "description": "Send notifications via Telegram bot"},
+            "slack": {"label": "Slack", "description": "Send notifications via Slack webhook"},
+            "discord": {"label": "Discord", "description": "Send notifications via Discord webhook"},
+            "general": {"label": "General", "description": "Platform-wide settings"},
+        }
+    }
+
+@app.get("/settings/{category}")
+def get_settings_by_category(category: str):
+    """Get settings for a specific category."""
+    return {"category": category, "settings": get_category_settings(category)}
+
+@app.post("/settings")
+def save_setting(req: SettingRequest):
+    """Save a single setting."""
+    set_setting(req.category, req.key, req.value, req.is_secret)
+    return {"status": "saved", "category": req.category, "key": req.key}
+
+@app.post("/settings/smtp")
+def configure_smtp(req: SmtpConfigRequest):
+    """Configure SMTP email settings."""
+    return save_smtp_config(req.host, req.port, req.username, req.password, req.from_email, req.use_tls)
+
+@app.post("/settings/telegram")
+def configure_telegram(req: TelegramConfigRequest):
+    """Configure Telegram bot."""
+    return save_telegram_config(req.bot_token, req.default_chat_id)
+
+@app.post("/settings/slack")
+def configure_slack(req: SlackConfigRequest):
+    """Configure Slack webhook."""
+    return save_slack_config(req.webhook_url, req.default_channel)
+
+@app.post("/settings/discord")
+def configure_discord(req: DiscordConfigRequest):
+    """Configure Discord webhook."""
+    return save_discord_config(req.webhook_url)
+
+@app.post("/settings/smtp/test")
+def test_smtp_connection():
+    """Test SMTP connection."""
+    return test_smtp()
+
+@app.post("/settings/telegram/test")
+def test_telegram_connection():
+    """Test Telegram bot."""
+    return test_telegram()
+
+@app.post("/settings/slack/test")
+def test_slack_connection():
+    """Test Slack webhook (sends a test message)."""
+    return test_slack()
+
+@app.post("/settings/discord/test")
+def test_discord_connection():
+    """Test Discord webhook (sends a test message)."""
+    return test_discord()
+
+
+# ── Notification Routes ──
+
+from agents.shared.notification_sender import send_email, send_telegram, send_slack, send_discord, send_notification
+
+
+class SendEmailRequest(BaseModel):
+    to_email: str
+    subject: str
+    body: str
+    html_body: Optional[str] = None
+
+class SendNotificationRequest(BaseModel):
+    message: str
+    channels: Optional[List[str]] = None
+
+
+@app.post("/notify/email")
+def api_send_email(req: SendEmailRequest):
+    """Send an email via configured SMTP."""
+    return send_email(req.to_email, req.subject, req.body, req.html_body)
+
+@app.post("/notify/telegram")
+def api_send_telegram(req: SendNotificationRequest):
+    """Send a Telegram message."""
+    return send_telegram(req.message)
+
+@app.post("/notify/slack")
+def api_send_slack(req: SendNotificationRequest):
+    """Send a Slack message."""
+    return send_slack(req.message)
+
+@app.post("/notify/discord")
+def api_send_discord(req: SendNotificationRequest):
+    """Send a Discord message."""
+    return send_discord(req.message)
+
+@app.post("/notify/all")
+def api_send_all(req: SendNotificationRequest):
+    """Send notification to all configured channels."""
+    return send_notification(req.message, req.channels)
