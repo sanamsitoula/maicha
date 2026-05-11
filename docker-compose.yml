@@ -106,7 +106,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - OLLAMA_BASE_URL=http://ollama:11434
-      - DEFAULT_MODEL=llama3.2:3b
+      - DEFAULT_MODEL=qwen3:8b
     depends_on:
       - postgres
       - ollama
@@ -129,7 +129,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - OLLAMA_BASE_URL=http://ollama:11434
-      - DEFAULT_MODEL=llama3.2:3b
+      - DEFAULT_MODEL=qwen3:8b
       - API_KEY=change-me-to-a-real-key
     volumes:
       - ./n8n/workflows:/opt/ai-server/n8n/workflows:ro

@@ -5,7 +5,7 @@ and supports other language pairs via Ollama models.
 import os
 from agents.shared.ollama_client import chat
 
-TRANSLATE_MODEL = os.getenv("TRANSLATE_MODEL", "translategemma:latest")
+TRANSLATE_MODEL = os.getenv("TRANSLATE_MODEL", "qwen3:8b")
 
 
 def translate_to_nepali(text, model=None):

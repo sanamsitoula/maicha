@@ -9,7 +9,7 @@ from agents.shared.base_agent import BaseAgent
 from agents.shared.database import query, execute
 from agents.shared.translator import translate_to_nepali, generate_nepali_content
 
-HERMES_MODEL = os.getenv("HERMES_MODEL", "hermes3:latest")
+HERMES_MODEL = os.getenv("HERMES_MODEL", "qwen3:8b")
 
 SYSTEM_PROMPT = """You are Hermes, the master AI orchestrator for the Maicha platform.
 
