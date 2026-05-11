@@ -1,4 +1,12 @@
-<!DOCTYPE html>
+#!/bin/bash
+set -e
+echo "=== Sub-phase B2: Maicha UI — Orange/White Theme + n8n + All Features ==="
+
+BASE="/opt/ai-server"
+cd "$BASE"
+
+python3 << 'PYSCRIPT'
+html = r'''<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -504,4 +512,42 @@ return <Landing onStart={m=>setScreen(m)}/>;
 ReactDOM.createRoot(document.getElementById("root")).render(<Root/>);
 </script>
 </body>
-</html>
+</html>'''
+
+with open("/opt/ai-server/nginx/maicha.html","w") as f:
+    f.write(html)
+print("maicha.html written: "+str(len(html))+" bytes")
+PYSCRIPT
+
+echo ""
+
+# Git commit
+cd /opt/ai-server
+git add -A
+git commit -m "Sub-phase B2: Maicha UI — orange/white theme + n8n workflows tab
+
+Complete UI with:
+- Landing page with agent showcase + intro
+- Orange/white warm theme with Instrument Serif headings
+- Auth: guest/login/register with JWT
+- Chat: 7 agents, quick prompts, agent icons in messages, model+time display
+- Explore: menu/properties/orders/events with glass-morphism cards
+- Dashboard: 11 stats including n8n workflows + executions
+- Workflows tab: n8n status, template cards, open n8n dashboard button, setup guides
+- Models tab (admin): installed models with details, pull new with suggestions, paid models
+- Settings tab (admin): SMTP/Telegram/Slack/Discord/WhatsApp config forms + test + current view
+- Dynamic model dropdown in header from /models API
+- Mobile responsive with collapsible sidebar
+- Logo + favicon with orange gradient M
+- Glass-morphism design throughout
+- Role-based tabs (admin sees Models + Settings)"
+
+echo ""
+echo "=== UI Updated ==="
+echo ""
+echo "Run:"
+echo "  cd /opt/ai-server"
+echo "  docker compose up -d --force-recreate nginx"
+echo "  git push"
+echo ""
+echo "Open: http://20.41.122.188/"
