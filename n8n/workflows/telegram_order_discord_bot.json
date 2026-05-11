@@ -1,0 +1,40 @@
+{
+  "name": "Telegram Order → Discord Notification Bot",
+  "description": "Automatically processes food orders from Telegram bot, saves to database, and notifies Discord channel with order details",
+  "flow": [
+    "1. Customer sends /order to Telegram bot",
+    "2. Bot collects: food items, name, phone, address, remarks",
+    "3. Order saved to PostgreSQL orders table",
+    "4. Discord receives formatted order notification",
+    "5. Email receipt sent if SMTP configured"
+  ],
+  "setup_instructions": [
+    "This workflow is BUILT INTO the Maicha API — no n8n setup needed!",
+    "",
+    "How it works:",
+    "1. Configure Telegram bot in Settings > Telegram (bot_token + chat_id)",
+    "2. Configure Discord in Settings > Discord (webhook_url)",
+    "3. Register the webhook: POST http://YOUR_IP/webhook/telegram/register",
+    "4. Send /start to your Telegram bot",
+    "5. Send /order to begin ordering",
+    "6. Bot guides through: items → name → phone → address → remarks → confirm",
+    "7. Order appears in Discord + saved in database",
+    "",
+    "Optional n8n enhancement:",
+    "Create an n8n workflow that polls GET /orders?status=confirmed every 5 min",
+    "and sends additional notifications (SMS, WhatsApp, email to kitchen staff)"
+  ],
+  "api_endpoints": {
+    "webhook": "POST /webhook/telegram",
+    "register": "POST /webhook/telegram/register",
+    "status": "GET /webhook/telegram/info",
+    "orders": "GET /orders"
+  },
+  "telegram_commands": {
+    "/start": "Welcome message + help",
+    "/menu": "View full menu with prices",
+    "/order": "Start multi-step ordering",
+    "/cancel": "Cancel current order",
+    "/help": "Show help"
+  }
+}

@@ -592,7 +592,9 @@ def api_n8n_workflows():
 
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request):
-    """Receive messages from Telegram bot, route to agents, notify Discord."""
+    """Telegram bot webhook — handles multi-step food ordering."""
+    from agents.shared.telegram_bot import process_telegram_message
+
     body = await request.json()
     message = body.get("message", {})
     text = message.get("text", "")
@@ -602,31 +604,45 @@ async def telegram_webhook(request: Request):
     if not text or not chat_id:
         return {"ok": True}
 
-    execute("INSERT INTO events (event_type, source, data) VALUES (%s, %s, %s)",
-            ("telegram_message", "telegram-bot", json.dumps({"chat_id": chat_id, "user": user_name, "text": text})))
-
-    food_keywords = ["order", "menu", "food", "burger", "salad", "cheesecake", "reserve", "book", "table"]
-    property_keywords = ["property", "house", "apartment", "rent", "buy", "listing"]
-
-    if text.lower().startswith("/start"):
-        reply = f"Welcome {user_name}! I'm Maicha AI.\n\n/menu — View restaurant menu\n/order [items] — Place an order\n/properties — Search listings\n\nOr just type your request!"
-    elif text.lower().startswith("/menu"):
-        menu = query("SELECT name, price, category FROM menu_items WHERE is_available = true ORDER BY category, name")
-        reply = "🍽 *Menu*\n\n" + "\n".join(f"• {i['name']} — ${i['price']}" for i in menu) + "\n\nTo order: /order Neural Burger"
-    elif any(kw in text.lower() for kw in food_keywords):
-        agent = get_agent("restaurant")
-        agent.reset_conversation()
-        reply = agent.process_message(f"Customer {user_name}: {text}")
-        send_discord(f"🍽 **Telegram Order**\nFrom: {user_name}\nMessage: {text}\nAgent: {reply[:300]}")
-    elif any(kw in text.lower() for kw in property_keywords):
-        agent = get_agent("real-estate")
-        agent.reset_conversation()
-        reply = agent.process_message(text)
-        send_discord(f"🏠 **Property Inquiry (Telegram)**\nFrom: {user_name}\nMessage: {text}")
-    else:
-        agent = get_agent("restaurant")
-        agent.reset_conversation()
-        reply = agent.process_message(text)
-
+    reply = process_telegram_message(chat_id, user_name, text)
     send_telegram(reply, chat_id)
     return {"ok": True}
+
+
+@app.post("/webhook/telegram/register")
+async def register_telegram_webhook():
+    """Register the Telegram webhook URL with Telegram API."""
+    from agents.shared.settings_manager import get_setting
+    from agents.shared.database import query as db_query
+
+    token_result = db_query("SELECT value FROM platform_settings WHERE category = 'telegram' AND key = 'bot_token'")
+    if not token_result:
+        return {"status": "error", "message": "Telegram bot token not configured. Go to Settings > Telegram first."}
+
+    token = token_result[0]["value"]
+    webhook_url = f"http://20.41.122.188/webhook/telegram"
+
+    resp = httpx.post(
+        f"https://api.telegram.org/bot{token}/setWebhook",
+        json={"url": webhook_url},
+        timeout=10.0,
+    )
+    data = resp.json()
+
+    if data.get("ok"):
+        return {"status": "ok", "message": "Webhook registered!", "url": webhook_url}
+    return {"status": "error", "message": data.get("description", "Unknown error")}
+
+
+@app.get("/webhook/telegram/info")
+async def telegram_webhook_info():
+    """Check current Telegram webhook status."""
+    from agents.shared.database import query as db_query
+
+    token_result = db_query("SELECT value FROM platform_settings WHERE category = 'telegram' AND key = 'bot_token'")
+    if not token_result:
+        return {"status": "error", "message": "Telegram not configured"}
+
+    token = token_result[0]["value"]
+    resp = httpx.get(f"https://api.telegram.org/bot{token}/getWebhookInfo", timeout=10.0)
+    return resp.json()

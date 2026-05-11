@@ -236,6 +236,58 @@ POST /content/nepali
 - **hermes3:latest** — Advanced reasoning + function calling for orchestration
 - **translategemma:latest** — Specialized translation model for Nepali
 
+
+## Telegram Order Bot
+
+Customers can order food directly through your Telegram bot with a guided multi-step flow.
+
+### Setup
+```bash
+# 1. Configure Telegram bot token (from @BotFather)
+POST /settings/telegram
+{"bot_token": "YOUR_TOKEN", "default_chat_id": "YOUR_CHAT_ID"}
+
+# 2. Configure Discord webhook (for order notifications)
+POST /settings/discord
+{"webhook_url": "https://discord.com/api/webhooks/..."}
+
+# 3. Register the webhook with Telegram
+POST /webhook/telegram/register
+
+# 4. Check webhook status
+GET /webhook/telegram/info
+```
+
+### Customer Flow
+```
+Customer: /start
+Bot: Welcome! Try /menu or /order
+
+Customer: /order
+Bot: [Shows menu] What would you like to order?
+
+Customer: Neural Burger, Algorithm Salad
+Bot: What is your name?
+
+Customer: Alex
+Bot: What is your mobile number?
+
+Customer: 9779812345678
+Bot: What is your delivery address?
+
+Customer: 123 Main Street, Kathmandu
+Bot: Any special remarks?
+
+Customer: Extra sauce please
+Bot: [Shows order summary] Confirm? (yes/no)
+
+Customer: yes
+Bot: ORDER CONFIRMED! Total: $27.06
+→ Discord gets notification
+→ Saved to database
+→ Email receipt sent (if SMTP configured)
+```
+
 ## Roadmap
 
 - [x] Phase 1: Git repo + project structure
@@ -244,5 +296,6 @@ POST /content/nepali
 - [x] Phase 4: Settings panel (SMTP, Telegram, Slack, Discord)
 - [x] Phase 5: Hermes agent + TranslateGemma (Nepali)
 - [ ] Phase 6: Media pipeline (Stable Diffusion, TTS, Whisper)
+- [x] Sub-phase C: Telegram order bot + Discord notifications
 - [ ] Phase 7: Social platform integration (Facebook, Instagram, TikTok)
 - [ ] Phase 8: Maicha UI v2 (all features integrated)
