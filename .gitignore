@@ -1,0 +1,48 @@
+# Environment & secrets
+.env
+*.env.local
+*.env.production
+
+# Database data
+postgres/data/
+qdrant/data/
+
+# Ollama models (large binary files)
+ollama/data/
+
+# Open WebUI data
+open-webui/data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+
+# Docker
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backups
+backups/*.sql
+backups/*.gz
+
+# Deploy scripts (one-time use)
+deploy_*.sh
+fix_*.sh
