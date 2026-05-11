@@ -1,4 +1,13 @@
-<!DOCTYPE html>
+#!/bin/bash
+set -e
+echo "=== Sub-phase B: Maicha UI v2 — Full Platform UI ==="
+
+BASE="/opt/ai-server"
+cd "$BASE"
+
+# Generate the UI using Python to avoid shell escaping issues
+python3 << 'PYSCRIPT'
+html = r'''<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -509,4 +518,39 @@ return user?<App/>:<AuthScreen onAuth={u=>{setUser(u)}}/>;
 ReactDOM.createRoot(document.getElementById("root")).render(<Root/>);
 </script>
 </body>
-</html>
+</html>'''
+
+with open("/opt/ai-server/nginx/maicha.html", "w") as f:
+    f.write(html)
+print("maicha.html written: " + str(len(html)) + " bytes")
+PYSCRIPT
+
+echo ""
+echo "=== Maicha UI v2 deployed ==="
+
+# Git commit
+cd /opt/ai-server
+git add -A
+git commit -m "Sub-phase B: Maicha UI v2 — full platform interface
+
+Complete UI rewrite with:
+- Auth screen: guest/login/register with JWT
+- Chat: all 7 agents with quick prompts, download, model selector
+- Explore: menu, properties, orders, events from live API
+- Dashboard: 11 stat cards including n8n workflows/executions
+- Models tab (admin): view installed, pull new, see paid models
+- Settings tab (admin): configure SMTP/Telegram/Slack/Discord/WhatsApp
+  with form fields, save, test connection, view current config
+- Dynamic model dropdown populated from /models API
+- Mobile responsive (collapsible sidebar)
+- Role-based UI (admin sees Models + Settings tabs)
+- Token auto-restored on page reload
+- Dark theme, Inter font, clean design"
+
+echo ""
+echo "Run:"
+echo "  cd /opt/ai-server"
+echo "  docker compose up -d --force-recreate nginx"
+echo "  git push"
+echo ""
+echo "Open: http://20.41.122.188/"
