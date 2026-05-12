@@ -61,23 +61,41 @@ def ollama_list():
 
 
 def ollama_pull(model_name):
-    """Pull a model from Ollama registry. Returns stream progress."""
+    """Pull a model from Ollama registry."""
     try:
+        # First check if model already exists
+        existing = ollama_list()
+        if not isinstance(existing, dict):
+            for m in existing:
+                if m.get("name") == model_name:
+                    ensure_model_table()
+                    execute(
+                        "INSERT INTO model_registry (name, provider, model_id) "
+                        "VALUES (%s, 'ollama', %s) ON CONFLICT (name) DO UPDATE SET is_active = true",
+                        (model_name, model_name)
+                    )
+                    return {"status": "success", "model": model_name, "message": "Model already installed"}
+
+        # Pull with streaming disabled — long timeout for large models
         resp = httpx.post(
             f"{OLLAMA_BASE_URL}/api/pull",
             json={"name": model_name, "stream": False},
-            timeout=600.0,
+            timeout=1800.0,
         )
-        resp.raise_for_status()
-        ensure_model_table()
-        execute(
-            "INSERT INTO model_registry (name, provider, model_id) "
-            "VALUES (%s, 'ollama', %s) ON CONFLICT (name) DO UPDATE SET is_active = true",
-            (model_name, model_name)
-        )
-        return {"status": "success", "model": model_name}
+        if resp.status_code == 200:
+            ensure_model_table()
+            execute(
+                "INSERT INTO model_registry (name, provider, model_id) "
+                "VALUES (%s, 'ollama', %s) ON CONFLICT (name) DO UPDATE SET is_active = true",
+                (model_name, model_name)
+            )
+            return {"status": "success", "model": model_name}
+        else:
+            return {"status": "error", "error": f"Ollama returned {resp.status_code}: {resp.text[:200]}"}
     except httpx.TimeoutException:
-        return {"status": "pulling", "model": model_name, "message": "Model is downloading. This can take several minutes. Check /models/ollama to see when it appears."}
+        return {"status": "pulling", "model": model_name, "message": "Model is downloading (large file). Check GET /models/ollama in a few minutes."}
+    except httpx.ConnectError:
+        return {"status": "error", "error": "Cannot connect to Ollama. Is the ai-ollama container running?"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 

@@ -646,3 +646,252 @@ async def telegram_webhook_info():
     token = token_result[0]["value"]
     resp = httpx.get(f"https://api.telegram.org/bot{token}/getWebhookInfo", timeout=10.0)
     return resp.json()
+
+
+# ══════════════════════════════════════════
+# CRUD: MENU ITEMS
+# ══════════════════════════════════════════
+
+class AddMenuItemRequest(BaseModel):
+    name: str
+    description: str = ""
+    category: str = "main"
+    price: float
+    dietary_tags: Optional[List[str]] = []
+    is_available: bool = True
+
+class UpdateMenuItemRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    dietary_tags: Optional[List[str]] = None
+    is_available: Optional[bool] = None
+
+
+@app.post("/menu/add", dependencies=[Depends(require_admin)])
+def add_menu_item(req: AddMenuItemRequest):
+    """Add a new menu item (admin only)."""
+    restaurants = query("SELECT id FROM restaurants LIMIT 1")
+    if not restaurants:
+        return {"status": "error", "message": "No restaurant configured. Create one first."}
+    result = execute(
+        "INSERT INTO menu_items (restaurant_id, name, description, category, price, dietary_tags, is_available) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, name, price",
+        (restaurants[0]["id"], req.name, req.description, req.category, req.price,
+         json.dumps(req.dietary_tags or []), req.is_available)
+    )
+    return {"status": "added", "item": result[0] if result else None}
+
+
+@app.put("/menu/{item_name}", dependencies=[Depends(require_admin)])
+def update_menu_item(item_name: str, req: UpdateMenuItemRequest):
+    """Update a menu item by name (admin only)."""
+    updates = []
+    params = []
+    if req.name is not None:
+        updates.append("name = %s")
+        params.append(req.name)
+    if req.description is not None:
+        updates.append("description = %s")
+        params.append(req.description)
+    if req.category is not None:
+        updates.append("category = %s")
+        params.append(req.category)
+    if req.price is not None:
+        updates.append("price = %s")
+        params.append(req.price)
+    if req.dietary_tags is not None:
+        updates.append("dietary_tags = %s")
+        params.append(json.dumps(req.dietary_tags))
+    if req.is_available is not None:
+        updates.append("is_available = %s")
+        params.append(req.is_available)
+    if not updates:
+        return {"status": "error", "message": "Nothing to update"}
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    params.append(item_name)
+    execute(f"UPDATE menu_items SET {', '.join(updates)} WHERE LOWER(name) = LOWER(%s)", tuple(params))
+    return {"status": "updated", "item": item_name}
+
+
+@app.delete("/menu/{item_name}", dependencies=[Depends(require_admin)])
+def delete_menu_item(item_name: str):
+    """Delete a menu item by name (admin only)."""
+    execute("DELETE FROM menu_items WHERE LOWER(name) = LOWER(%s)", (item_name,))
+    return {"status": "deleted", "item": item_name}
+
+
+# ══════════════════════════════════════════
+# CRUD: PROPERTY LISTINGS
+# ══════════════════════════════════════════
+
+class AddPropertyRequest(BaseModel):
+    title: str
+    description: str = ""
+    property_type: str = "apartment"
+    listing_type: str = "rent"
+    price: float
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
+    area_sqft: Optional[float] = None
+    city: str = ""
+    state: str = ""
+    zip_code: str = ""
+    address_line1: str = ""
+    features: Optional[List[str]] = []
+
+
+@app.post("/properties/add", dependencies=[Depends(require_admin)])
+def add_property(req: AddPropertyRequest):
+    """Add a new property listing (admin only)."""
+    result = execute(
+        "INSERT INTO property_listings (title, description, property_type, listing_type, price, "
+        "bedrooms, bathrooms, area_sqft, city, state, zip_code, address_line1, features, status) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active') RETURNING id, title, price",
+        (req.title, req.description, req.property_type, req.listing_type, req.price,
+         req.bedrooms, req.bathrooms, req.area_sqft, req.city, req.state, req.zip_code,
+         req.address_line1, json.dumps(req.features or []))
+    )
+    return {"status": "added", "property": result[0] if result else None}
+
+
+@app.delete("/properties/{property_id}", dependencies=[Depends(require_admin)])
+def delete_property(property_id: str):
+    """Delete a property listing (admin only)."""
+    execute("UPDATE property_listings SET status = 'archived' WHERE id = %s::uuid", (property_id,))
+    return {"status": "archived", "id": property_id}
+
+
+# ══════════════════════════════════════════
+# DETAILED: ORDERS + CONVERSATIONS
+# ══════════════════════════════════════════
+
+@app.get("/orders/{order_id}")
+def get_order_detail(order_id: str):
+    """Get full order details with items, customer info."""
+    order = query(
+        "SELECT o.id, o.customer_name, o.customer_email, o.customer_phone, "
+        "o.order_type, o.status, o.subtotal, o.tax, o.total, "
+        "o.special_instructions, o.created_at, o.updated_at "
+        "FROM orders o WHERE o.id = %s::uuid", (order_id,))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    order = order[0]
+    items = query(
+        "SELECT oi.quantity, oi.unit_price, oi.total_price, oi.special_requests, mi.name, mi.category "
+        "FROM order_items oi JOIN menu_items mi ON oi.menu_item_id = mi.id "
+        "WHERE oi.order_id = %s::uuid", (order_id,))
+    order["items"] = items
+    return {"order": order}
+
+
+@app.get("/orders-detailed")
+def get_orders_detailed(status: Optional[str] = None, limit: int = 20):
+    """Get orders with full details including items and customer info."""
+    if status:
+        orders = query(
+            "SELECT o.id, o.customer_name, o.customer_phone, o.status, o.total, "
+            "o.special_instructions, o.order_type, o.created_at "
+            "FROM orders o WHERE LOWER(o.status) = LOWER(%s) "
+            "ORDER BY o.created_at DESC LIMIT %s", (status, limit))
+    else:
+        orders = query(
+            "SELECT o.id, o.customer_name, o.customer_phone, o.status, o.total, "
+            "o.special_instructions, o.order_type, o.created_at "
+            "FROM orders o ORDER BY o.created_at DESC LIMIT %s", (limit,))
+    for order in orders:
+        items = query(
+            "SELECT mi.name, oi.quantity, oi.total_price "
+            "FROM order_items oi JOIN menu_items mi ON oi.menu_item_id = mi.id "
+            "WHERE oi.order_id = %s::uuid", (str(order["id"]),))
+        order["items"] = items
+    return {"orders": orders, "count": len(orders)}
+
+
+@app.get("/conversations/{conv_id}/messages")
+def get_conversation_messages(conv_id: str, limit: int = 50):
+    """Get all messages in a conversation."""
+    conv = query(
+        "SELECT id, agent_type, title, status, created_at FROM conversations WHERE id = %s::uuid",
+        (conv_id,))
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    messages = query(
+        "SELECT role, content, model_used, created_at FROM messages "
+        "WHERE conversation_id = %s::uuid ORDER BY created_at ASC LIMIT %s",
+        (conv_id, limit))
+    return {"conversation": conv[0], "messages": messages, "count": len(messages)}
+
+
+@app.get("/conversations-detailed")
+def get_conversations_detailed(agent_type: Optional[str] = None, limit: int = 20):
+    """Get conversations with message count and last message preview."""
+    if agent_type:
+        convos = query(
+            "SELECT c.id, c.agent_type, c.title, c.status, c.created_at, "
+            "COUNT(m.id) as message_count, "
+            "MAX(m.created_at) as last_message_at "
+            "FROM conversations c LEFT JOIN messages m ON c.id = m.conversation_id "
+            "WHERE c.agent_type = %s "
+            "GROUP BY c.id ORDER BY c.created_at DESC LIMIT %s",
+            (agent_type, limit))
+    else:
+        convos = query(
+            "SELECT c.id, c.agent_type, c.title, c.status, c.created_at, "
+            "COUNT(m.id) as message_count, "
+            "MAX(m.created_at) as last_message_at "
+            "FROM conversations c LEFT JOIN messages m ON c.id = m.conversation_id "
+            "GROUP BY c.id ORDER BY c.created_at DESC LIMIT %s",
+            (limit,))
+    # Get last message preview for each
+    for c in convos:
+        last_msg = query(
+            "SELECT role, LEFT(content, 100) as preview FROM messages "
+            "WHERE conversation_id = %s::uuid ORDER BY created_at DESC LIMIT 1",
+            (str(c["id"]),))
+        c["last_message"] = last_msg[0] if last_msg else None
+    return {"conversations": convos, "count": len(convos)}
+
+
+@app.get("/reservations")
+def get_reservations(limit: int = 20):
+    """Get all reservations with details."""
+    return {"reservations": query(
+        "SELECT id, customer_name, customer_phone, party_size, "
+        "reservation_date, reservation_time, status, special_requests, created_at "
+        "FROM reservations ORDER BY reservation_date DESC, reservation_time DESC LIMIT %s",
+        (limit,))}
+
+
+# ══════════════════════════════════════════
+# CRUD: RESTAURANTS
+# ══════════════════════════════════════════
+
+class AddRestaurantRequest(BaseModel):
+    name: str
+    description: str = ""
+    cuisine_type: str = ""
+    address: str = ""
+    phone: str = ""
+
+
+@app.post("/restaurants/add", dependencies=[Depends(require_admin)])
+def add_restaurant(req: AddRestaurantRequest):
+    """Add a new restaurant (admin only)."""
+    result = execute(
+        "INSERT INTO restaurants (name, description, cuisine_type, address, phone) "
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id, name",
+        (req.name, req.description, req.cuisine_type, req.address, req.phone))
+    return {"status": "added", "restaurant": result[0] if result else None}
+
+
+@app.put("/orders/{order_id}/status", dependencies=[Depends(require_admin)])
+def update_order_status(order_id: str, status: str):
+    """Update order status (admin only)."""
+    valid = ["pending", "confirmed", "preparing", "ready", "delivered", "cancelled"]
+    if status not in valid:
+        return {"status": "error", "message": f"Invalid status. Use: {', '.join(valid)}"}
+    execute("UPDATE orders SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s::uuid",
+            (status, order_id))
+    return {"status": "updated", "order_id": order_id, "new_status": status}

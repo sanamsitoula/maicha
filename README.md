@@ -237,6 +237,40 @@ POST /content/nepali
 - **translategemma:latest** — Specialized translation model for Nepali
 
 
+
+## CRUD Endpoints
+
+### Menu Management (admin)
+```bash
+POST /menu/add          # Add menu item
+PUT  /menu/{name}       # Update menu item
+DELETE /menu/{name}     # Delete menu item
+```
+
+### Property Management (admin)
+```bash
+POST /properties/add     # Add property listing
+DELETE /properties/{id}  # Archive property
+```
+
+### Order Management
+```bash
+GET /orders-detailed         # Orders with items + customer details
+GET /orders/{id}             # Single order full detail
+PUT /orders/{id}/status      # Update order status (admin)
+```
+
+### Conversation History
+```bash
+GET /conversations-detailed          # Conversations with message count + preview
+GET /conversations/{id}/messages     # Full message history
+```
+
+### Reservations
+```bash
+GET /reservations     # All reservations with details
+```
+
 ## Telegram Order Bot
 
 Customers can order food directly through your Telegram bot with a guided multi-step flow.
